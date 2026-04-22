@@ -1,0 +1,22 @@
+version: "3.8"          # Docker Compose version
+
+services:               # here are my containers
+
+  db:                   # Container 1 — PostgreSQL
+    image: postgres:15  # use this image
+    environment:        # set these settings
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgress123
+      POSTGRES_DB: fastapi_db
+    ports:
+      - "5432:5432"     # open this port
+
+  web:                  # Container 2 — FastAPI
+    build: .            # build from my Dockerfile
+    ports:
+      - "8000:8000"     # open this port
+    depends_on:
+      - db              # start db first
+    environment:
+      DATABASE_URL: postgresql://postgres:postgress123@db:5432/fastapi_db
+      # tell FastAPI where PostgreSQL is

@@ -1,0 +1,280 @@
+# 📝 Depends() and Database Session — Notes
+### Never Forget These Concepts
+
+---
+
+## 1. What is a Database Session
+
+> Session = one conversation with database
+> Like a phone call — open it, talk, close it
+
+
+Without session → messy, slow, wasteful
+With session    → clean, fast, controlled
+
+
+### Rule:
+
+Every request  → opens its OWN session
+Does its work  → uses that session
+Request done   → session closes automatically
+
+
+---
+
+## 2. The Session Pattern — Memorize This
+
+python
+def get_db():
+    db = SessionLocal()    # open conversation with database
+    try:
+        yield db           # give it to whoever needs it
+    finally:
+        db.close()         # ALWAYS close — no matter what
+
+
+### Why yield and not return?
+
+return → gives value and STOPS function
+         db.close() would never run 💀
+
+yield  → gives value and PAUSES function
+         after endpoint finishes → resumes
+         db.close() ALWAYS runs ✅
+
+
+---
+
+## 3. What is Depends()
+
+> Depends() = "run this function first, give me the result"
+> You don't call the function yourself
+> FastAPI calls it automatically before your endpoint
+
+### Simple Example:
+python
+def get_number():
+    return 42
+
+@app.get("/test")
+def my_endpoint(number: int = Depends(get_number)):
+    # FastAPI ran get_number() automatically
+    # passed result as number
+    return {"number": number}  # 42
+
+
+---
+
+## 4. Depends() with Database
+
+python
+@app.get("/students")
+def get_students(db: Session = Depends(get_db)):
+#                ↑              ↑
+#           variable name    run get_db() first
+#           to use in        get session
+#           function         pass it as db
+    students = db.query(models.Student).all()
+    return students
+
+
+### Flow Every Request:
+
+Request comes in
+      ↓
+FastAPI sees Depends(get_db)
+      ↓
+Runs get_db() automatically
+      ↓
+Opens database session
+      ↓
+Yields session as db
+      ↓
+Your endpoint runs with db
+      ↓
+Request finishes
+      ↓
+finally: db.close() runs automatically
+
+
+---
+
+## 5. Three Places You Use Depends()
+
+python
+# 1. Get database session — MOST COMMON
+db: Session = Depends(get_db)
+
+# 2. Get current logged in user — FOR PROTECTED ROUTES
+current_user: str = Depends(get_current_user)
+
+# 3. Login form — FOR LOGIN ENDPOINT ONLY
+form_data: OAuth2PasswordRequestForm = Depends()
+
+
+---
+
+## 6. DB Query Patterns — Memorize These
+
+### GET all records
+python
+db.query(models.Student).all()
+# look in Student table → get everything
+
+
+### GET one record by id
+python
+db.query(models.Student).filter(
+    models.Student.id == student_id
+).first()
+# look in Student table → where id matches → get first result
+
+
+### GET with multiple filters
+python
+db.query(models.Student).filter(
+    models.Student.grade == "A",
+    models.Student.passed == True
+).all()
+
+
+### CREATE new record
+python
+db_student = models.Student(**student.model_dump())
+# model_dump() → converts pydantic to dict
+# ** → unpacks dict into keyword arguments
+
+db.add(db_student)      # prepare to save
+db.commit()             # actually save to database
+db.refresh(db_student)  # reload — gets id from database
+return db_student
+
+
+### UPDATE record
+python
+# first find it
+db_student = db.query(models.Student).filter(
+    models.Student.id == student_id
+).first()
+
+# update each field
+for key, value in student.model_dump().items():
+    setattr(db_student, key, value)
+#   setattr = set attribute
+#   same as: db_student.name = value
+
+db.commit()             # save changes
+db.refresh(db_student)  # reload updated data
+return db_student
+
+
+### DELETE record
+python
+# first find it
+student = db.query(models.Student).filter(
+    models.Student.id == student_id
+).first()
+
+db.delete(student)  # prepare deletion
+db.commit()         # actually delete
+return {"message": "Deleted"}
+
+
+---
+
+## 7. DB Commands — Quick Reference
+
+
+db.query()      → look in table
+.all()          → get everything
+.first()        → get first match
+.filter()       → add conditions
+
+db.add()        → prepare new record
+db.commit()     → save ALL changes
+db.refresh()    → reload from database
+db.delete()     → prepare deletion
+db.close()      → end conversation (auto)
+
+
+---
+
+## 8. Always Check Before DB Operations
+
+python
+# ALWAYS check if record exists before update/delete
+student = db.query(models.Student).filter(
+    models.Student.id == student_id
+).first()
+
+if not student:
+    raise HTTPException(status_code=404, detail="Not found")
+
+# only then do the operation
+
+
+---
+
+## 9. Full Endpoint Template
+
+python
+@app.post("/students", response_model=schemas.StudentResponse)
+def create_student(
+    student: schemas.StudentCreate,      # data from user
+    db: Session = Depends(get_db),       # database session
+    current_user: str = Depends(get_current_user)  # if protected
+):
+    # your logic here
+    db_student = models.Student(**student.model_dump())
+    db.add(db_student)
+    db.commit()
+    db.refresh(db_student)
+    return db_student
+
+
+---
+
+## 10. One Line Summaries
+
+
+Session    = one conversation with database
+get_db()   = opens session → yields → closes
+Depends()  = run this first, give me result
+yield      = pause here, resume after endpoint
+commit()   = save changes permanently
+refresh()  = reload object to get latest data
+
+
+---
+
+## 11. Common Mistakes
+
+
+❌ Forgetting db.commit() → changes not saved
+❌ Forgetting db.refresh() → id not in object
+❌ Using return instead of yield in get_db()
+❌ Not checking if record exists before update/delete
+❌ Forgetting Depends(get_db) in endpoint
+
+
+---
+
+## 12. Architecture Reminder
+
+
+database.py  → connection setup + get_db()
+models.py    → table definitions
+schemas.py   → data validation
+main.py      → endpoints using all above
+
+Flow:
+Request → Depends(get_db) → session opens
+       → your endpoint runs
+       → db operations
+       → response sent
+       → session closes
+
+
+---
+
+Save this. Read it before every FastAPI session. 🔥
